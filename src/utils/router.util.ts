@@ -20,43 +20,80 @@ export const isString = (fn: any): fn is string => typeof fn === 'string';
 export const isNil = (obj: any): obj is null | undefined =>
   isUndefined(obj) || obj === null;
 
+const mapInjectables = (
+  requirements: Array<ClassConstructor | null>,
+  injectables: Array<symbol | string | null>,
+  providers: ClassConstructor[],
+  Controller: ClassConstructor
+) => {
+  return requirements.map(
+    (requiredProvider: ClassConstructor | null, idx: number) => {
+      const provider = providers.find((provider) => {
+        const implementing =
+          Reflect.getMetadata(INJECTOR_INTERFACES_METADATA, provider) || [];
+        return (
+          (!!requiredProvider &&
+            (provider === requiredProvider ||
+              Object.prototype.isPrototypeOf.call(
+                provider.prototype,
+                requiredProvider.prototype
+              ))) ||
+          implementing.includes(injectables[idx])
+        );
+      });
+      if (!provider) {
+        throw new Error(
+          `Provider of type ${
+            requiredProvider?.name || String(injectables[idx])
+          } not found for controller: ${Object.getPrototypeOf(Controller).name}`
+        );
+      }
+      return provider;
+    }
+  );
+};
+
 const createRouter = (
   { controllers, providers = [], routePrefix }: CreateRouterOption,
   prefix?: string,
   router = new Router()
 ) => {
   controllers.forEach((Controller) => {
-    const requiredProviders = (
-      Reflect.getMetadata(
-        'design:paramtypes',
-        Object.getPrototypeOf(Controller)
-      ) || []
-    ).map((requiredProvider: ClassConstructor, idx: number) => {
-      const { injectables } = Reflect.getMetadata(
-        CONTROLLER_METADATA,
-        Controller
-      ) || { injectables: [] };
-      const provider = providers.find((provider) => {
-        const implementing =
-          Reflect.getMetadata(INJECTOR_INTERFACES_METADATA, provider) || [];
-          return (
-            provider === requiredProvider ||
-          Object.prototype.isPrototypeOf.call(
-            provider.prototype,
-            requiredProvider.prototype
-          ) || implementing.includes(injectables[idx])
-        );
-      });
-      if (!provider) {
+    let requiredProviders;
+
+    const requiredProvidersFromMetadata = Reflect.getMetadata(
+      'design:paramtypes',
+      Object.getPrototypeOf(Controller)
+    ) || [];
+    const { injectables } = Reflect.getMetadata(
+      CONTROLLER_METADATA,
+      Controller
+    ) || { injectables: [] };
+
+    if (!requiredProvidersFromMetadata?.length && Controller.length) {
+      //looks like metadata emission is not available
+      if (injectables.length < Controller.length) {
         throw new Error(
-          `Provider of type ${
-            requiredProvider.name
-          } not found for controller: ${Object.getPrototypeOf(Controller).name}`
+          `Cannot find injectable for ${Object.getPrototypeOf(Controller).name}`
         );
       }
-      return provider;
-    });
+      debugger;
 
+      //passing a null-filled array will force looking for explicit injectables
+      requiredProviders = mapInjectables(
+        Array.from({ length: Controller.length }, (_, i) => null),
+        injectables,
+        providers,
+        Controller
+      );
+    } else {
+      requiredProviders = mapInjectables(
+        requiredProvidersFromMetadata,
+        injectables,
+        providers,
+        Controller
+      );
+    }
     Reflect.defineMetadata('design:paramtypes', requiredProviders, Controller);
 
     const controller = bootstrap<any>(Controller);
