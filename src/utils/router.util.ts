@@ -22,7 +22,7 @@ export const isNil = (obj: any): obj is null | undefined =>
 
 const mapInjectables = (
   requirements: Array<ClassConstructor | null>,
-  injectables: Array<symbol | string | null>,
+  injectables: Array<symbol | string | ClassConstructor | null>,
   providers: ClassConstructor[],
   Controller: ClassConstructor
 ) => {
@@ -38,6 +38,7 @@ const mapInjectables = (
                 provider.prototype,
                 requiredProvider.prototype
               ))) ||
+          provider === injectables[idx] ||
           implementing.includes(injectables[idx])
         );
       });
@@ -60,28 +61,27 @@ const createRouter = (
 ) => {
   controllers.forEach((Controller) => {
     let requiredProviders;
-
-    const requiredProvidersFromMetadata = Reflect.getMetadata(
-      'design:paramtypes',
-      Object.getPrototypeOf(Controller)
-    ) || [];
+    const arity = Object.getPrototypeOf(Controller).length;
+    const requiredProvidersFromMetadata =
+      Reflect.getMetadata(
+        'design:paramtypes',
+        Object.getPrototypeOf(Controller)
+      ) || [];
     const { injectables } = Reflect.getMetadata(
       CONTROLLER_METADATA,
       Controller
     ) || { injectables: [] };
 
-    if (!requiredProvidersFromMetadata?.length && Controller.length) {
+    if (!requiredProvidersFromMetadata?.length && arity) {
       //looks like metadata emission is not available
-      if (injectables.length < Controller.length) {
+      if (injectables.length < arity) {
         throw new Error(
           `Cannot find injectable for ${Object.getPrototypeOf(Controller).name}`
         );
       }
-      debugger;
-
       //passing a null-filled array will force looking for explicit injectables
       requiredProviders = mapInjectables(
-        Array.from({ length: Controller.length }, (_, i) => null),
+        Array.from({ length: arity }, (_, i) => null),
         injectables,
         providers,
         Controller

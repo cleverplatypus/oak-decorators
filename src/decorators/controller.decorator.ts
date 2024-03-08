@@ -9,6 +9,7 @@ import {
   ROUTE_ARGS_METADATA,
   CONTROLLER_METADATA,
 } from '../const.ts';
+import { ClassConstructor } from "../types.ts";
 
 type Next = () => Promise<unknown>;
 
@@ -17,7 +18,7 @@ export function Controller<T extends { new (...instance: any[]): Object }>(
     | string
     | {
         path?: string;
-        injectables: Array<string | symbol | null>;
+        injectables: Array<string | symbol | null | ClassConstructor>;
       }
 ) {
   const path: string | undefined =
