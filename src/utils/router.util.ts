@@ -20,38 +20,61 @@ export const isString = (fn: any): fn is string => typeof fn === 'string';
 export const isNil = (obj: any): obj is null | undefined =>
   isUndefined(obj) || obj === null;
 
+const isProviderSuitable = (
+  provider: ClassConstructor,
+  requiredProvider: ClassConstructor | null,
+  injectable: symbol | string | ClassConstructor | null
+): boolean => {
+  const implementingInterfaces =
+    Reflect.getMetadata(INJECTOR_INTERFACES_METADATA, provider) || [];
+  const isRequiredProvider =
+    requiredProvider &&
+    (provider === requiredProvider ||
+      Object.prototype.isPrototypeOf.call(
+        provider.prototype,
+        requiredProvider.prototype
+      ));
+  const isInjectableMatch =
+    provider === injectable || implementingInterfaces.includes(injectable);
+
+  return isRequiredProvider || isInjectableMatch;
+};
+
+const findProviderForRequirement = (
+  providers: ClassConstructor[],
+  requiredProvider: ClassConstructor | null,
+  injectable: symbol | string | ClassConstructor | null,
+  Controller: ClassConstructor
+): ClassConstructor => {
+  const provider = providers.find((provider) =>
+    isProviderSuitable(provider, requiredProvider, injectable)
+  );
+
+  if (!provider) {
+    throw new Error(
+      `Provider of type ${
+        requiredProvider?.name || String(injectable)
+      } not found for ${Object.getPrototypeOf(Controller).name}`
+    );
+  }
+
+  return provider;
+};
+
 const mapInjectables = (
   requirements: Array<ClassConstructor | null>,
   injectables: Array<symbol | string | ClassConstructor | null>,
   providers: ClassConstructor[],
   Controller: ClassConstructor
-) => {
-  return requirements.map(
-    (requiredProvider: ClassConstructor | null, idx: number) => {
-      const provider = providers.find((provider) => {
-        const implementing =
-          Reflect.getMetadata(INJECTOR_INTERFACES_METADATA, provider) || [];
-        return (
-          (!!requiredProvider &&
-            (provider === requiredProvider ||
-              Object.prototype.isPrototypeOf.call(
-                provider.prototype,
-                requiredProvider.prototype
-              ))) ||
-          provider === injectables[idx] ||
-          implementing.includes(injectables[idx])
-        );
-      });
-      if (!provider) {
-        throw new Error(
-          `Provider of type ${
-            requiredProvider?.name || String(injectables[idx])
-          } not found for controller: ${Object.getPrototypeOf(Controller).name}`
-        );
-      }
-      return provider;
-    }
-  );
+): ClassConstructor[] => {
+  return requirements.map((requiredProvider, idx) => {
+    return findProviderForRequirement(
+      providers,
+      requiredProvider,
+      injectables[idx],
+      Controller
+    );
+  });
 };
 
 const createRouter = (
